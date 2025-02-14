@@ -1,0 +1,152 @@
+---
+title: "SOK-1005-V25-Assignment 2"
+author: "Andreas Brandsegg"
+format: html
+editor: visual
+---
+
+## Task 1
+
+```{r message=FALSE, warning=FALSE}
+rm(list = ls())
+library(tidyverse)
+library(lubridate)
+library(stringr)
+
+data <- read_csv("https://raw.githubusercontent.com/uit-sok-1005-v23/uit-sok-1005-v23.github.io/main/storedata.csv")
+
+data <- data %>%
+  mutate(Year = year(Order_Date),  # Extract YYYY
+         Month = month(Order_Date)) 
+
+print(unique(data$Year)) # Check available years and regions
+print(unique(data$Region))
+
+# 1.
+table1 <- data %>%
+  filter(Year == 2017, 
+         Month %in% c(10, 11, 12),  
+         Region %in% c("Region 1", "Region 9"), 
+         Customer_Segment %in% c("Corporate", "Consumer")) %>%
+  group_by(Year, Month, Region, Customer_Segment) %>%
+  summarise(TotalSales = sum(Sales, na.rm = TRUE), .groups = "drop") %>%
+  arrange(Month, Region, Customer_Segment)
+
+print(table1)
+
+# 2.
+fig_data <- data %>%
+  filter(Region %in% c("Region 1", "Region 13"), 
+         Year >= 2015 & Year <= 2017) %>%
+  group_by(Year, Month, Region) %>%
+  summarise(TotalSales = sum(Sales, na.rm = TRUE), .groups = "drop")
+
+if (nrow(fig_data) > 0) {
+  ggplot(fig_data, aes(x = Month, y = TotalSales, color = factor(Region))) +
+    geom_line() +
+    facet_wrap(~Year) +
+    labs(title = "Monthly Total Sales in Region 1 and 13 (2015–2017)",
+         x = "Month", y = "Total Sales",
+         color = "Region")
+} else {
+  print("No data available for the selected regions and years.")
+}
+
+# 3.
+region1 <- fig_data %>%
+  filter(Region == "Region 1") %>%
+  rename(TotalSales_1 = TotalSales)
+
+region13 <- fig_data %>%
+  filter(Region == "Region 13") %>%
+  rename(TotalSales_13 = TotalSales)
+
+compare_data <- left_join(region1, region13, by = c("Year", "Month"))
+
+table2 <- compare_data %>%
+  filter(TotalSales_13 > TotalSales_1) %>%
+  select(Year, Month, TotalSales_1, TotalSales_13)
+
+print(table2)
+
+# 4.
+table3 <- data %>%
+  filter(Year == 2017, 
+         !Region %in% c("Region 3", "Region 5", "Region 8")) %>%
+  group_by(Customer_Segment, Product_Category) %>%
+  summarise(AvgProfit = mean(Profit, na.rm = TRUE), .groups = "drop") %>%
+  arrange(desc(AvgProfit))
+
+print(table3)
+
+highest_profit <- table3 %>%
+  filter(AvgProfit == max(AvgProfit))
+
+print(highest_profit)
+```
+
+## Task 2
+
+```{r message=FALSE, warning=FALSE}
+
+library(tidyverse)
+library(rvest)
+library(ggplot2)
+
+url <- "https://www.motor.no/aktuelt/motors-store-vintertest-av-rekkevidde-pa-elbiler/217132"
+
+webpage <- read_html(url)
+
+# a)
+
+raw_table <- html_table(html_nodes(webpage, "div table")[[1]]) # Extract the first table found in the HTML
+
+ev_data <- raw_table %>% # Cleaning the dataset
+  select(Model = 1, WLTP = 2, STOP = 3) %>%  
+  mutate(
+    WLTP = as.numeric(str_extract(WLTP, "\\d+")),  # Extract numeric range
+    STOP = as.numeric(str_extract(STOP, "\\d+"))   
+  ) %>%
+  filter(!is.na(WLTP) & !is.na(STOP))  # Remove any rows with NA values
+
+ggplot(ev_data, aes(x = WLTP, y = STOP)) +
+  geom_point(color = "seagreen", size = 3) +  # Scatter plot of WLTP vs STOP
+  geom_abline(intercept = 0, slope = 1, color = "red", linetype = "dashed") +  
+  labs(
+    title = "Comparison of Stated vs. Real Winter Driving Range for EVs",
+    x = "WLTP Range (km) - Official Estimate",
+    y = "STOP Range (km) - Actual Winter Test",
+    caption = "Data Source: MOTOR.no | Red Line = Expected Range"
+  ) +
+  theme_minimal()
+
+
+```
+
+```{r message=FALSE, warning=FALSE}
+
+# b)
+
+# Run the linear regression model
+ev_model <- lm(STOP ~ WLTP, data = ev_data)
+
+# Print summary of the model
+summary(ev_model)
+
+```
+
+```{r message=FALSE, warning=FALSE}
+
+ggplot(ev_data, aes(x = WLTP, y = STOP)) +
+  geom_point(color = "seagreen", size = 3) +  
+  geom_abline(intercept = 0, slope = 1, color = "red", linetype = "dashed") +  
+  geom_smooth(method = "lm", color = "orange", se = FALSE) +  # Regression line
+  labs(
+    title = "WLTP vs. Real-World Winter Range for Electric Cars",
+    x = "WLTP Range (km) - Official Estimate",
+    y = "STOP Range (km) - Actual Winter Test",
+    caption = "Data Source: MOTOR.no | Red Line = Expected Range | Green Line = Fitted Regression"
+  ) +
+  theme_minimal()
+
+```
