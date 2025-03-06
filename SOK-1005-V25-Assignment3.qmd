@@ -1,0 +1,363 @@
+---
+title: "SOK-1005-V25-Assignment 3"
+author: "Andreas Brandsegg"
+format: html
+editor: visual
+---
+
+## Task 1
+
+```{r message=FALSE, warning=FALSE}
+
+rm(list = ls())
+library(tidyverse)
+library(readxl)  
+library(forcats) 
+
+download.file(
+  url = "https://www.ifw-kiel.de/fileadmin/Dateiverwaltung/IfW-Publications/fis-import/f319e1c8-5654-4cd6-b4c7-5722ae437d30-Ukraine_Support_Tracker_Release_21.xlsx",
+  destfile = "UkraineSupportTracker.xlsx",
+  mode = "wb"
+)
+
+df <- readxl::read_excel("UkraineSupportTracker.xlsx", sheet = 12, skip = 8)
+head(df)
+
+df <- df %>%
+  filter(!if_all(everything(), is.na)) 
+
+df <- df %>%
+  rename(Refugee_cost = `Refugee cost estimation`)
+```
+
+```{r message=FALSE, warning=FALSE}
+
+df_long <- df %>%
+  select(Country, Financial, Humanitarian, Military, Refugee_cost) %>%
+  pivot_longer(
+    cols = c("Financial", "Humanitarian", "Military", "Refugee_cost"),
+    names_to = "Aid_Type",
+    values_to = "Amount"
+  )
+
+head(df_long)
+```
+
+```{r message=FALSE, warning=FALSE}
+
+df_totals <- df_long %>%
+  group_by(Country) %>%
+  summarize(Total = sum(Amount, na.rm = TRUE))
+
+df_long_ordered <- df_long %>%
+  filter(Country != "Total") %>%            
+  left_join(df_totals, by = "Country") %>%
+  mutate(Country = fct_reorder(Country, Total))
+
+ggplot(df_long_ordered, aes(x = Country, y = Amount, fill = Aid_Type)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  scale_y_continuous(
+    limits = c(0, NA), 
+    expand = c(0, 0), 
+    breaks = scales::pretty_breaks(n = 24)) +
+  scale_fill_manual(values = c("Financial"     = "green4",
+                               "Humanitarian"  = "gold",
+                               "Military"      = "firebrick",
+                               "Refugee_cost"  = "dodgerblue")) +
+
+  labs(
+    x = NULL,
+    y = "Billion Euros",
+    fill = "Type of Aid",
+    title = "Total Bilateral Commitments Plus Refugee Costs"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    axis.text.y = element_text(size = 7)     
+  )
+
+```
+
+## Task 2
+
+```{r message=FALSE, warning=FALSE}
+
+library(lubridate)
+
+df2 <- read_csv("https://raw.githubusercontent.com/ywchiu/rcookbook/master/chapter7/superstore_sales.csv")
+
+df2_dates <- df2 %>%
+  separate(`Order Date`, into = c("year", "month", "day"), sep = "/")
+
+# Monthly sales
+df2_monthly <- df2_dates %>%
+  mutate(month = as.numeric(month)) %>% # Convert month strings to numeric.
+  group_by(month) %>%
+  summarize(Total_Sales = sum(Sales, na.rm = TRUE)) %>%
+  ungroup()
+
+ggplot(df2_monthly, aes(x = factor(month), y = Total_Sales)) +
+  geom_col(fill = "steelblue") +
+  labs(
+    title = "Total Sales by Month (Extracted from Order Date)",
+    x = "Month",
+    y = "Sales"
+  ) +
+  theme_minimal(base_size = 12)
+
+# Province with the highest sales in descending order
+df2_prov <- df2 %>%
+  group_by(Province) %>%
+  summarize(Total_Sales = sum(Sales, na.rm = TRUE)) %>%
+  ungroup() %>%
+  arrange(desc(Total_Sales))
+
+ggplot(df2_prov, aes(x = reorder(Province, -Total_Sales), y = Total_Sales)) +
+  geom_col(fill = "tomato") +
+  scale_y_continuous(labels = scales::label_number(scale_cut = scales::cut_short_scale())) +
+  labs(
+    title = "Total Sales by Province",
+    x = "Province",
+    y = "Sales"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+#  Province & product category
+df2_cat <- df2 %>%
+  group_by(Province, `Product Category`) %>%
+  summarize(Total_Sales = sum(Sales, na.rm = TRUE)) %>%
+  ungroup()
+
+# Top category in each province
+df2_cat_top <- df2_cat %>%
+  group_by(Province) %>%
+  slice_max(Total_Sales, n = 1)
+
+# Top category per province
+ggplot(df2_cat_top, aes(
+  x = reorder(Province, -Total_Sales),
+  y = Total_Sales,
+  fill = `Product Category`
+)) +
+  geom_col() +
+  scale_y_continuous(
+    labels = scales::label_number(scale_cut = scales::cut_short_scale())
+  ) +
+  labs(
+    title = "Top-Selling Category in Each Province",
+    x = "Province",
+    y = "Sales"
+  ) +
+  theme_minimal(base_size = 8) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+
+# All categories in each province
+ggplot(df2_cat, aes(x = `Product Category`, y = Total_Sales, fill = `Product Category`)) +
+  geom_col() +
+  facet_wrap(~ Province, scales = "free_y") +
+  scale_y_continuous(
+    labels = scales::label_number(scale_cut = scales::cut_short_scale())
+  ) +
+  labs(
+    title = "Sales by Category and Province",
+    x = "Category",
+    y = "Sales"
+  ) +
+  theme_minimal(base_size = 8) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+## Task 3
+
+```{r message=FALSE, warning=FALSE}
+
+# A and B
+
+library(gapminder)
+
+# Min and max life expectancy by year in Asia
+asia_life_range <- gapminder %>%
+  filter(continent == "Asia") %>%
+  group_by(year) %>%
+  summarise(
+    min_lifeExp = min(lifeExp),
+    max_lifeExp = max(lifeExp),
+    .groups = "drop"
+  )
+
+
+# Reshape wide -> long for plotting
+asia_life_range_long <- asia_life_range %>%
+  pivot_longer(
+    cols = c(min_lifeExp, max_lifeExp),
+    names_to = "LifeExpType", 
+    values_to = "LifeExpValue"
+  )
+
+# Min and max life expectancy over time
+ggplot(asia_life_range_long, aes(x = year, y = LifeExpValue, color = LifeExpType)) +
+  geom_line(linewidth = 1.2) +        # <-- use linewidth instead of size
+  geom_point(size = 2) +
+  scale_color_manual(values = c("min_lifeExp" = "blue", "max_lifeExp" = "red")) +
+  labs(
+    title = "Minimum vs. Maximum Life Expectancy in Asia (by Year)",
+    x = "Year",
+    y = "Life Expectancy"
+  ) +
+  theme_minimal()
+
+
+# Filter Asia and compute min/max lifeExp by year
+asia_life_range <- gapminder %>%
+  filter(continent == "Asia") %>%
+  group_by(year) %>%
+  summarise(
+    min_lifeExp = min(lifeExp),
+    max_lifeExp = max(lifeExp),
+    .groups = "drop"
+  ) %>%
+  arrange(year)
+
+# log differences year-to-year
+asia_life_logdiff <- asia_life_range %>%
+  mutate(
+    log_min_diff = log(min_lifeExp) - log(lag(min_lifeExp)),
+    log_max_diff = log(max_lifeExp) - log(lag(max_lifeExp))
+  )
+
+asia_life_logdiff
+
+# Min vs. max log-differences over the years
+asia_life_logdiff_long <- asia_life_logdiff %>%
+  select(year, log_min_diff, log_max_diff) %>%
+  pivot_longer(
+    cols      = c(log_min_diff, log_max_diff),
+    names_to  = "LogDiffType",
+    values_to = "LogDiffValue"
+  )
+
+ggplot(asia_life_logdiff_long, aes(x = year, y = LogDiffValue, color = LogDiffType)) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 2) +
+  scale_color_manual(values = c("log_min_diff" = "blue", "log_max_diff" = "red")) +
+  labs(
+    title = "Year-to-Year Log-Differences in Life Expectancy (Asia)",
+    x = "Year",
+    y = "Log Difference of Life Expectancy"
+  ) +
+  theme_minimal()
+
+
+# Which has grown most in total?
+
+total_log_min <- sum(asia_life_logdiff$log_min_diff, na.rm = TRUE)
+total_log_max <- sum(asia_life_logdiff$log_max_diff, na.rm = TRUE)
+
+min_growth_factor <- exp(total_log_min)  # final/min initial
+max_growth_factor <- exp(total_log_max)  
+
+cat("\nOver the entire period from", min(asia_life_logdiff$year), "to", max(asia_life_logdiff$year), ":\n")
+cat(" • Minimum life expectancy growth factor:", round(min_growth_factor, 2), "\n")
+cat(" • Maximum life expectancy growth factor:", round(max_growth_factor, 2), "\n\n")
+
+if (min_growth_factor > max_growth_factor) {
+  cat(">> CONCLUSION: The MINIMUM life expectancy grew more (in percentage terms).\n")
+} else if (max_growth_factor > min_growth_factor) {
+  cat(">> CONCLUSION: The MAXIMUM life expectancy grew more (in percentage terms).\n")
+} else {
+  cat(">> CONCLUSION: Both grew by the same percentage.\n")
+}
+
+```
+
+```{r message=FALSE, warning=FALSE}
+
+# C, D and E
+
+# Average lifeExp and average gdpPercap for each country.
+country_avgs <- gapminder %>%
+  group_by(country) %>%
+  summarise(
+    avg_lifeExp   = mean(lifeExp),
+    avg_gdpPercap = mean(gdpPercap)
+  ) %>%
+  ungroup()
+
+# Top 20 countries by average lifeExp
+top20_lifeExp <- country_avgs %>%
+  slice_max(order_by = avg_lifeExp, n = 20)
+
+ggplot(top20_lifeExp, aes(x = avg_lifeExp, 
+                          y = reorder(country, avg_lifeExp))) +
+  geom_point(color = "blue", size = 3) +
+  labs(
+    x = "Average Life Expectancy",
+    y = "Country",
+    title = "Top 20 Countries by Average Life Expectancy"
+  ) +
+  theme_minimal()
+
+# Top 20 countries by average GDP per capita
+top20_gdp <- country_avgs %>%
+  slice_max(order_by = avg_gdpPercap, n = 20)
+
+ggplot(top20_gdp, aes(x = avg_gdpPercap, 
+                      y = reorder(country, avg_gdpPercap))) +
+  geom_point(color = "red", size = 3) +
+  labs(
+    x = "Average GDP per Capita",
+    y = "Country",
+    title = "Top 20 Countries by Average GDP per Capita"
+  ) +
+  theme_minimal()
+
+
+# Average for each country.
+country_continent_avgs <- gapminder %>%
+  group_by(country, continent) %>%
+  summarise(
+    avg_lifeExp   = mean(lifeExp),
+    avg_gdpPercap = mean(gdpPercap),
+    .groups = "drop"
+  )
+
+ggplot(country_continent_avgs,
+       aes(x = avg_gdpPercap,
+           y = avg_lifeExp,
+           color = continent)) +
+  geom_point(size = 3) +
+  scale_x_log10() +   # transform x-axis to log scale
+  scale_y_log10() +   # transform y-axis to log scale
+  labs(
+    x = "Average GDP per Capita (log scale)",
+    y = "Average Life Expectancy (log scale)",
+    title = "Average Life Expectancy vs. GDP per Capita"
+  ) +
+  theme_minimal()
+
+
+# lifeExp_gain = lifeExp(current year) - lifeExp(previous year)
+lifeExp_diffs <- gapminder %>%
+  group_by(country, continent) %>%
+  arrange(year) %>%
+  mutate(
+    lifeExp_gain = lifeExp - lag(lifeExp)
+  ) %>%
+  summarise(
+    sharpest_drop = min(lifeExp_gain, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Find the country that had the single worst 5-year drop (most negative) in life expectancy:
+worst_drops_by_continent <- lifeExp_diffs %>%
+  group_by(continent) %>%
+  slice_min(order_by = sharpest_drop, n = 1)
+
+worst_drops_by_continent
+```
+
+I have used ChatGPT to help with coding and formating data.
